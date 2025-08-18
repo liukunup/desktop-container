@@ -1,0 +1,4 @@
+# 忽略不需要构建的文件
+.git
+node_modules
+*.md

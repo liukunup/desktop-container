@@ -1,0 +1,7 @@
+# K8s 服务文件
+apiVersion: v1
+kind: Service
+metadata:
+  name: desktop-container-service
+spec:
+  # ...更多配置...
