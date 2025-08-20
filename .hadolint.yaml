@@ -1,0 +1,11 @@
+# Haskell Dockerfile Linter
+# see https://github.com/hadolint/hadolint
+# rules https://github.com/hadolint/hadolint?tab=readme-ov-file#rules
+
+ignored:
+  - DL3007 # Pin the version explicitly to a release tag.
+
+override:
+  error:
+    - DL3013 # Pin versions in pip.
+    - DL4001 # Either use Wget or Curl but not both.

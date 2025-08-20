@@ -1,0 +1,88 @@
+# 选择基础镜像
+ARG BASE_IMAGE=ubuntu:24.04
+
+# hadolint ignore=DL3006
+FROM ${BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    # 设置用户名/密码 (值为空时，将会自动生成)
+    USERNAME="" \
+    PASSWORD=""
+
+# 拷贝启动脚本
+COPY scripts/entrypoint.sh scripts/logger.sh /
+
+# 拷贝配置文件
+COPY supervisord/my.conf /etc/supervisor/conf.d/supervisord.conf
+
+# 安装软件包
+RUN apt-get update \
+    && apt-get upgrade -y \
+    # 赋予脚本执行权限
+    && chmod +x entrypoint.sh \
+    && chmod +x logger.sh \
+    # 安装所需的软件包
+    && apt-get install -y \
+    #
+    sudo \
+    #
+    openssl \
+    #
+    openssh-server \
+    #
+    dbus-x11 \
+    # [Supervisor: A Process Control System](https://supervisord.org/)
+    supervisor \
+    x11vnc \
+    # [noVNC: HTML VNC client library and application](https://github.com/novnc/noVNC)
+    novnc \
+    # [websockify: WebSockets support for any application/server](https://github.com/novnc/websockify)
+    websockify \
+    # RDP
+    xrdp xorg xorgxrdp \
+    # 桌面环境 [Xfce Desktop Environment](https://www.xfce.org/)
+    xfce4 \
+    xfce4-goodies \
+    # 音频 [PulseAudio](http://pulseaudio.org/)
+    pulseaudio \
+    pulseaudio-utils \
+    pavucontrol \
+    # 远程桌面 [Free Remote Desktop for Everybody - NoMachine](https://www.nomachine.com/)
+    && curl -fSL "https://www.nomachine.com/free/linux/64/deb" -o nomachine.deb \
+    && dpkg -i nomachine.deb \
+    && rm -f nomachine.deb \
+    # ----------------------------------------------------
+    # === 设置 Xfce
+    && echo "xfce4-session" > /etc/skel/.xsession \
+    && sed -i 's/port=3389/port=3390/g' /etc/xrdp/xrdp.ini \
+    && echo "startxfce4" > /etc/xrdp/startwm.sh \
+    && chmod +x /etc/xrdp/startwm.sh \
+    # === 设置 NoMachine 的 node.cfg
+    && cp /usr/NX/etc/node.cfg /usr/NX/etc/node.cfg.bak \
+    && sed -i \
+    -e "s|^DefaultDesktopCommand.*|DefaultDesktopCommand \"/usr/bin/startxfce4\"|" \
+    -e "s|^AvailableSessionTypes.*|AvailableSessionTypes unix-remote,unix-console,unix-default,unix-application,physical-desktop,shadow,unix-xsession-default,unix-xdm,SSH|" \
+    -e "s|^CommandStartGnome.*|#&|" \
+    -e "s|^#DefaultXSession.*|DefaultXSession /usr/bin/startxfce4|" \
+    /usr/NX/etc/node.cfg \
+    # === 设置 NoMachine 的 server.cfg
+    && cp /usr/NX/etc/server.cfg /usr/NX/etc/server.cfg.bak \
+    && sed -i \
+    -e "s|#EnableClipboard both|EnableClipboard both|g" \
+    /usr/NX/etc/server.cfg \
+    # ----------------------------------------------------
+    # 清理缓存
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 暴露端口
+# - 2222 SSH
+# - 4000 NoMachine - NX
+# - 3390 RDP
+# - 5900 VNC
+# - 6080 NoVNC
+EXPOSE 2222 4000 3390 5900 6080
+
+ENTRYPOINT [ "/entrypoint.sh" ]
+
+CMD [ "rdp" ]
