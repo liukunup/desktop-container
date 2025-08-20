@@ -60,7 +60,7 @@ RUN apt-get update \
     && sed -i \
     -e 's/#Port 22/Port 2222/' \
     -e 's/#PasswordAuthentication yes/PasswordAuthentication yes/' \
-    /etc/ssh/sshd_config
+    /etc/ssh/sshd_config \
     # === 设置 Xfce
     && echo "xfce4-session" > /etc/skel/.xsession \
     && sed -i 's/port=3389/port=3390/g' /etc/xrdp/xrdp.ini \
