@@ -231,13 +231,12 @@ start() {
   fi
 
   # ----- Show connection info -----
-  ip_address=$(hostname -I | awk '{print $1}')
   info "=========================================================================="
   info "The desktop container is configured with the following details:"
-  info "• RDP: ${ip_address}:3390"
-  info "• VNC: ${ip_address}:5900"
-  info "• NoVNC: https://${ip_address}:6080/vnc.html"
-  info "• NoMachine: ${ip_address}:4000"
+  info "• RDP: localhost:3390"
+  info "• VNC: localhost:5900"
+  info "• NoVNC: https://localhost:6080/vnc.html"
+  info "• NoMachine: localhost:4000"
   info "• Username: ${username}"
   if [[ -n "${password}" ]]; then
     info "• Password: ${password}"
