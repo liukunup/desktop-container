@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# set -x  # debug
-set -euo pipefail  # production
+# set -x  # Uncomment for debugging
+
+# Ensure script exits on error and unset variables
+set -euo pipefail
 
 # =================================================
 # Entry Point Script for Desktop Docker Container
@@ -11,19 +13,35 @@ set -euo pipefail  # production
 readonly SCRIPT_VERSION="1.0.0"
 SCRIPT_NAME=$(basename "$0")
 
+# ------------ Constants (Do not modify) ----------
+readonly SCRIPT_VERSION="1.0.0"
+# shellcheck disable=SC2155
+readonly SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}") || exit 1
+readonly LOCK_FILE="/tmp/${SCRIPT_NAME%.*}.lock"
+
+# ------------ Environment Variables --------------
+: "${DISPLAY:=:0}"
+: "${RESOLUTION:=1280x720}"
+: "${DEPTH:=24}"
+: "${DEFAULT_USER:=billy}"
+: "${USERNAME:=}"
+: "${PASSWORD:=}"
+
 # ------------ Toolkit ------------
 
-# 引入日志工具类
-if [[ -f "logger.sh" ]]; then
-  source logger.sh
-  export LOG_LEVEL="DEBUG"
-  export LOG_FILE="${SCRIPT_NAME%.*}.log"
+# Load logger if available, else define basic logging functions
+LOGGER_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/logger.sh"
+if [[ -f "${LOGGER_SCRIPT}" && -r "${LOGGER_SCRIPT}" ]]; then
+  # shellcheck disable=SC1090
+  source "${LOGGER_SCRIPT}"
+  export LOG_LEVEL="INFO"
+  export LOG_FILE="/var/log/${SCRIPT_NAME%.*}.log"
 else
-  debug()    { echo "[DEBUG] $(date '+%Y-%m-%d %H:%M:%S') - $@"; }
-  info()     { echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $@"; }
-  warn()     { echo "[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $@"; }
-  error()    { echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $@"; }
-  critical() { echo "[CRITICAL] $(date '+%Y-%m-%d %H:%M:%S') - $@"; }
+  debug()    { local timestamp; timestamp=$(date '+%Y-%m-%d %H:%M:%S') || return 1; echo "[DEBUG] ${timestamp} - $*"; }
+  info()     { local timestamp; timestamp=$(date '+%Y-%m-%d %H:%M:%S') || return 1; echo "[INFO] ${timestamp} - $*"; }
+  warn()     { local timestamp; timestamp=$(date '+%Y-%m-%d %H:%M:%S') || return 1; echo "[WARN] ${timestamp} - $*"; }
+  error()    { local timestamp; timestamp=$(date '+%Y-%m-%d %H:%M:%S') || return 1; echo "[ERROR] ${timestamp} - $*"; }
+  critical() { local timestamp; timestamp=$(date '+%Y-%m-%d %H:%M:%S') || return 1; echo "[CRITICAL] ${timestamp} - $*"; }
 fi
 
 # Create lock file to prevent multiple instances
@@ -136,77 +154,113 @@ create_user() {
   export PASSWORD="${password}"
 }
 
-check_or_create_self_signed_ssl_cert() {
+use_default_self_signed_ssl_cert() {
   local cert_dir="$1"
-  local cert_filename="${2:-selfsigned}"
-  local cert_file="${cert_dir}/${cert_filename}.crt"
-  local key_file="${cert_dir}/${cert_filename}.key"
-  local days="${3:-365}"
+  local cert_name="${2:-selfsigned}"
 
-  # Check if certificate already exists
-  if [[ -f "${cert_file}" ]] && [[ -f "${key_file}" ]]; then
-    info "The self-signed SSL certificate already exists."
-    info "  Certificate: ${cert_file}"
-    info "  Private key: ${key_file}"
-    info "  Valid   for: ${days} days"
-    return 0
-  fi
-
-  # Create directories if they don't exist
+  # Create certificate directory if it doesn't exist
   mkdir -p "${cert_dir}" || {
     error "Failed to create certificate directory: ${cert_dir}"
     return 1
   }
 
-  # Check if OpenSSL is installed
-  if ! command -v openssl &> /dev/null; then
-    error "OpenSSL is not installed. Please install it first."
-    return 1
-  fi
-
-  # Generate certificate  
-  openssl req -x509 -nodes -days "${days}" -newkey rsa:2048 -sha256 \
-    -keyout "${key_file}" -out "${cert_file}" \
-    -subj "/C=CN/ST=Guangdong/L=Shenzhen/O=My Company Inc./OU=R&D/CN=localhost" 2>/dev/null
-
-  # Set proper permissions
-  chmod 644 "${cert_file}"
-  chmod 600 "${key_file}"
-
-  # Set ownership if USERNAME is set
-  if [[ -n "${USERNAME}" ]]; then
-    chown "${USERNAME}:${USERNAME}" "${cert_file}" "${key_file}" || {
-      error "Failed to set ownership for certificate files"
+  if [[ ! -f "${cert_dir}/${cert_name}.pem" || ! -f "${cert_dir}/${cert_name}.key" ]]; then
+    # PEM
+    if [[ -f "/etc/ssl/certs/ssl-cert-snakeoil.pem" ]]; then
+      [[ ! -f "${cert_dir}/${cert_name}.pem" ]] || rm -f "${cert_dir}/${cert_name}.pem"
+      ln -s "/etc/ssl/certs/ssl-cert-snakeoil.pem" "${cert_dir}/${cert_name}.pem"
+    else
+      error "Default self-signed SSL certificate not found at /etc/ssl/certs/ssl-cert-snakeoil.pem"
       return 1
-    }
+    fi
+    # Private key
+    if [[ -f "/etc/ssl/private/ssl-cert-snakeoil.key" ]]; then
+      [[ ! -f "${cert_dir}/${cert_name}.key" ]] || rm -f "${cert_dir}/${cert_name}.key"
+      ln -s "/etc/ssl/private/ssl-cert-snakeoil.key" "${cert_dir}/${cert_name}.key"
+    else
+      error "Default self-signed SSL private key not found at /etc/ssl/private/ssl-cert-snakeoil.key"
+      return 1
+    fi
+  else
+    info "Using existing self-signed SSL certificate"
+    return 0
   fi
 
-  if [[ -f "${cert_file}" && -f "${key_file}" ]]; then
-    info "The self-signed SSL certificate created successfully"
-    info "  Certificate: ${cert_file}"
-    info "  Private key: ${key_file}"
-    info "  Valid   for: ${days} days"
-  else
-    error "Failed to create self-signed SSL certificate"
-    return 1
-  fi
+  info "Using default self-signed SSL certificate"
+  debug "  Certificate: ${cert_dir}/${cert_name}.pem"
+  debug "  Private key: ${cert_dir}/${cert_name}.key"
 
   return 0
 }
 
-start() {
+start_desktop() {
   info "========================================"
-  info "Starting desktop container"
+  info "Starting Desktop Container"
   info "========================================"
 
   local username="$1"
   local password="$2"
 
   # ----- User -----
+  create_user "${USERNAME}" "${PASSWORD}"
 
   # ----- SSL -----
 
+  # Remove existing D-Bus PID files to prevent hanging on container restart
+  [[ ! -f /run/dbus/pid ]] || rm -f /run/dbus/pid || error "Failed to remove existing D-Bus PID file"
+
+  # ----- VNC -----
+  # First time startup or password has been changed
+  if [[ -n "${PASSWORD}" ]]; then
+    # Generate VNC password file
+    local passwd_dir="/home/${USERNAME}/.vnc"
+    local passwd_file="${passwd_dir}/passwd"
+    mkdir -p "${passwd_dir}" || {
+      error "Failed to create required directories: ${passwd_dir}"
+      exit 1
+    }
+    /usr/bin/x11vnc -storepasswd "${PASSWORD}" "${passwd_file}" >/dev/null 2>&1 || {
+      error "Failed to generate VNC password file"
+      exit 1
+    }
+    chmod 600 "${passwd_file}" || {
+      error "Failed to set permissions on VNC password file"
+      exit 1
+    }
+    chown "${USERNAME}:${USERNAME}" "${passwd_file}" || {
+      error "Failed to set ownership for user home directory"
+      exit 1
+    }
+  fi
+
+  use_default_self_signed_ssl_cert "/opt/certs" "novnc"
+  cert_status=$?
+  if [[ "${cert_status}" -ne 0 ]]; then
+    error "ERROR: SSL certificate configuration failed"
+    exit 1
+  fi
+
   # ----- RDP -----
+  local cert_dir="/home/${USERNAME}/.certs"
+  local cert_name="rdp"
+  # Configure SSL certificate
+  use_default_self_signed_ssl_cert "${cert_dir}" "${cert_name}"
+  cert_status=$?
+  if [[ "${cert_status}" -ne 0 ]]; then
+    error "ERROR: SSL certificate configuration failed"
+    exit 1
+  fi
+  # Ensure user is in ssl-cert group
+  if ! id -nG "${USERNAME}" | grep -qw "ssl-cert"; then
+    usermod -aG ssl-cert "${USERNAME}" || {
+      error "Failed to add user ${USERNAME} to ssl-cert group"
+      exit 1
+    }
+  fi
+  # Configure xrdp to use the self-signed certificate
+  sed -i "s|^certificate=.*|certificate=${cert_dir}/${cert_name}.pem|" /etc/xrdp/xrdp.ini
+  sed -i "s|^key_file=.*|key_file=${cert_dir}/${cert_name}.key|" /etc/xrdp/xrdp.ini
+
   # Remove existing sesman/xrdp PID files to prevent rdp sessions hanging on container restart
   [[ ! -f /var/run/xrdp/xrdp-sesman.pid ]] || rm -f /var/run/xrdp/xrdp-sesman.pid
   [[ ! -f /var/run/xrdp/xrdp.pid ]] || rm -f /var/run/xrdp/xrdp.pid
@@ -247,7 +301,7 @@ start() {
 
   # ----- Supervisor -----
   info "Start supervisord with logging"
-  exec /usr/bin/supervisord --nodaemon --configuration=/etc/supervisor/conf.d/supervisord.conf | \
+  exec /usr/bin/supervisord --nodaemon --configuration=/etc/supervisord.conf | \
     while read -r line; do
       info "supervisord: ${line}"
     done
@@ -261,22 +315,48 @@ show_help() {
   cat <<EOF
 Usage: ${SCRIPT_NAME} <mode> [options]
 
+Available modes:
+desktop         Start Desktop
+keepalive       Just keep container alive
+
 Environment Variables:
 
 EOF
 }
 
 # ------------ Main ------------
-main() {
 
+
+# ------------ Main Script ------------
+main() {
   create_lock
 
+  info "=========================================="
   info "Starting ${SCRIPT_NAME} v${SCRIPT_VERSION}"
+  info "=========================================="
+
+  current_user=$(id) || current_user="unknown"
+  info "Running as ${current_user}"
+  info "Log file: ${LOG_FILE}"
 
   if [[ $# -eq 0 ]]; then
     show_help
     exit 1
   fi
+
+  local mode=$1
+  shift
+
+  case ${mode} in
+    desktop)        start_desktop ;;
+    keepalive)      run_keepalive ;;
+    help|--help|-h) show_help ;;
+    *) 
+      error "Unknown mode: ${mode}"
+      show_help
+      exit 1
+      ;;
+  esac
 }
 
 main "$@"

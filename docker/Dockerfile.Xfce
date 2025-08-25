@@ -1,26 +1,29 @@
 # 选择基础镜像
 ARG BASE_IMAGE=ubuntu:24.04
-
 # hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive \
     # 设置用户名/密码 (值为空时，将会自动生成)
     USERNAME="" \
-    PASSWORD=""
+    PASSWORD="" \
+    # 设置虚拟显示器
+    DISPLAY=":0" \
+    RESOLUTION="1280x720" \
+    DEPTH="24"
 
 # 拷贝启动脚本
-COPY scripts/entrypoint.sh scripts/logger.sh /
+COPY scripts/entrypoint.sh scripts/logger.sh /usr/local/bin/
 
 # 拷贝配置文件
-COPY supervisord/my.conf /etc/supervisor/conf.d/supervisord.conf
+COPY supervisord/my.conf /etc/supervisord.conf
 
 # 安装软件包
 RUN apt-get update \
     && apt-get upgrade -y \
     # 赋予脚本执行权限
-    && chmod +x entrypoint.sh \
-    && chmod +x logger.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/logger.sh \
     # 安装所需的软件包
     && apt-get install -y \
     #
@@ -29,10 +32,13 @@ RUN apt-get update \
     openssl \
     #
     openssh-server \
-    #
-    dbus-x11 \
     # [Supervisor: A Process Control System](https://supervisord.org/)
     supervisor \
+    # Install Xvfb for virtual framebuffer support
+    xvfb \
+    #
+    dbus-x11 \
+    # 
     x11vnc \
     # [noVNC: HTML VNC client library and application](https://github.com/novnc/noVNC)
     novnc \
@@ -92,6 +98,6 @@ RUN apt-get update \
 # - 6080 NoVNC
 EXPOSE 2222 4000 3390 5900 6080
 
-ENTRYPOINT [ "/entrypoint.sh" ]
+ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
 
-CMD [ "rdp" ]
+CMD [ "desktop" ]
