@@ -113,6 +113,9 @@ create_user() {
       return 1
   }
 
+  debug "Username: ${username}"
+  debug "Password: ${password}"
+
   # Create user with sudo privileges
   if ! useradd --shell /bin/bash \
                 --uid "${uid}" \
@@ -311,6 +314,16 @@ start_desktop() {
   exit 1
 }
 
+keepalive() {
+  info "========================================"
+  info "Keepalive"
+  info "========================================"
+
+  info "Container will remain running indefinitely"
+
+  exec tail -f /dev/null
+}
+
 show_help() {
   cat <<EOF
 Usage: ${SCRIPT_NAME} <mode> [options]
@@ -325,9 +338,6 @@ EOF
 }
 
 # ------------ Main ------------
-
-
-# ------------ Main Script ------------
 main() {
   create_lock
 
@@ -349,7 +359,7 @@ main() {
 
   case ${mode} in
     desktop)        start_desktop ;;
-    keepalive)      run_keepalive ;;
+    keepalive)      keepalive ;;
     help|--help|-h) show_help ;;
     *) 
       error "Unknown mode: ${mode}"

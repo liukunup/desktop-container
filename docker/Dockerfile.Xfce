@@ -3,14 +3,31 @@ ARG BASE_IMAGE=ubuntu:24.04
 # hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 
+# Maintainer
+LABEL maintainer="LiuKun<liukunup@outlook.com>"
+
+# Metadata
+LABEL org.opencontainers.image.title="DesktopContainer"
+LABEL org.opencontainers.image.authors="LiuKun<liukunup@outlook.com>"
+LABEL org.opencontainers.image.source="https://github.com/liukunup/desktop-container"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.description="Ubuntu-based remote desktop environment"
+
 ENV DEBIAN_FRONTEND=noninteractive \
-    # 设置用户名/密码 (值为空时，将会自动生成)
+    # 用户名/密码 (值为空时，将会自动生成)
     USERNAME="" \
     PASSWORD="" \
-    # 设置虚拟显示器
+    # 默认显示设备
     DISPLAY=":0" \
+    # 默认分辨率
     RESOLUTION="1280x720" \
-    DEPTH="24"
+    # 默认颜色深度
+    DEPTH="24" \
+    # 语言环境
+    LANG="C.UTF-8" \
+    LC_ALL="C.UTF-8" \
+    # 时区设置
+    TZ="UTC"
 
 # 拷贝启动脚本
 COPY scripts/entrypoint.sh scripts/logger.sh /usr/local/bin/
@@ -21,24 +38,28 @@ COPY supervisord/my.conf /etc/supervisord.conf
 # 安装软件包
 RUN apt-get update \
     && apt-get upgrade -y \
-    # 赋予脚本执行权限
-    && chmod +x /usr/local/bin/entrypoint.sh \
-    && chmod +x /usr/local/bin/logger.sh \
     # 安装所需的软件包
-    && apt-get install -y \
-    #
+    && apt-get install -y --no-install-recommends \
+    # CA证书
+    ca-certificates \
+    # 下载工具
+    curl \
+    wget \
+    # GPG加密工具             
+    gnupg \
+    # 提供sudo权限管理
     sudo \
-    #
+    # SSL/TLS工具包
     openssl \
-    #
+    # SSH服务器
     openssh-server \
     # [Supervisor: A Process Control System](https://supervisord.org/)
     supervisor \
     # Install Xvfb for virtual framebuffer support
     xvfb \
-    #
+    # D-Bus消息总线系统(X11相关)
     dbus-x11 \
-    # 
+    # VNC服务器，用于远程访问X11会话
     x11vnc \
     # [noVNC: HTML VNC client library and application](https://github.com/novnc/noVNC)
     novnc \
@@ -53,6 +74,9 @@ RUN apt-get update \
     pulseaudio \
     pulseaudio-utils \
     pavucontrol \
+    # 字体
+    fonts-dejavu \
+    fonts-liberation \
     # 远程桌面 [Free Remote Desktop for Everybody - NoMachine](https://www.nomachine.com/)
     && curl -fSL "https://www.nomachine.com/free/linux/64/deb" -o nomachine.deb \
     && dpkg -i nomachine.deb \
@@ -66,6 +90,8 @@ RUN apt-get update \
     && sed -i \
     -e 's/#Port 22/Port 2222/' \
     -e 's/#PasswordAuthentication yes/PasswordAuthentication yes/' \
+    -e 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' \
+    -e 's/#X11Forwarding yes/X11Forwarding yes/' \
     /etc/ssh/sshd_config \
     # === 设置 Xfce
     && echo "xfce4-session" > /etc/skel/.xsession \
@@ -86,16 +112,19 @@ RUN apt-get update \
     -e "s|#EnableClipboard both|EnableClipboard both|g" \
     /usr/NX/etc/server.cfg \
     # ----------------------------------------------------
+    # 赋予脚本执行权限
+    && chmod +x /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/logger.sh \
     # 清理缓存
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # 暴露端口
-# - 2222 SSH
-# - 4000 NoMachine - NX
-# - 3390 RDP
-# - 5900 VNC
-# - 6080 NoVNC
+# - 2222: SSH远程访问
+# - 4000: NoMachine NX协议
+# - 3390: RDP远程桌面
+# - 5900: VNC协议
+# - 6080: NoVNC Web访问
 EXPOSE 2222 4000 3390 5900 6080
 
 ENTRYPOINT [ "/usr/local/bin/entrypoint.sh" ]
